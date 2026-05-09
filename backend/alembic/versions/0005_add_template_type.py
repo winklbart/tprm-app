@@ -94,12 +94,13 @@ def upgrade() -> None:
                 name="templateassessmenttype",
                 create_type=False,
             ),
-            nullable=False,
-            server_default="'self_assessment'",
+            nullable=True,
         ),
     )
-    # Drop the server default — existing rows already got 'self_assessment'
-    op.execute("ALTER TABLE assessment_templates ALTER COLUMN type DROP DEFAULT")
+    # Backfill existing rows (all pre-existing templates are self_assessment)
+    op.execute("UPDATE assessment_templates SET type = 'self_assessment'::templateassessmenttype")
+    # Now enforce NOT NULL
+    op.alter_column("assessment_templates", "type", nullable=False)
     op.create_index("ix_assessment_templates_type", "assessment_templates", ["type"])
 
     # Seed new base templates for trust_center, access_to_information, ai_check
