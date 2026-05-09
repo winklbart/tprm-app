@@ -8,6 +8,7 @@ const navItems = [
   { label: "Vendors", href: "/vendors" },
   { label: "Assets", href: "/assets" },
   { label: "Assessments", href: "/assessments" },
+  { label: "Templates", href: "/assessments/templates", indent: true },
   { label: "Risks", href: "/risks" },
   { label: "Audit Logs", href: "/audit-logs" },
 ];
@@ -42,13 +43,17 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className="flex items-center px-3 py-2 text-sm font-medium transition-colors"
+              className="flex items-center py-2 text-sm font-medium transition-colors"
               style={{
                 borderRadius: 8,
                 background: active ? "#1e1b4b" : "transparent",
                 color: active ? "#818cf8" : "#64748b",
+                paddingLeft: item.indent ? 28 : 12,
+                paddingRight: 12,
+                fontSize: item.indent ? 12 : undefined,
               }}
             >
+              {item.indent && <span style={{ marginRight: 4, opacity: 0.5 }}>↳</span>}
               {item.label}
             </Link>
           );

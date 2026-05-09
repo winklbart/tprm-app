@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from app.api.v1.assessment_templates import router as assessment_templates_router
 from app.api.v1.assessments import public_router as assessments_public_router
 from app.api.v1.assessments import router as assessments_router
 from app.api.v1.assets import router as assets_router
@@ -40,6 +41,7 @@ app.include_router(assets_router, prefix="/api/v1")
 app.include_router(risks_router, prefix="/api/v1")
 app.include_router(assessments_router, prefix="/api/v1")
 app.include_router(assessments_public_router, prefix="/api/v1")
+app.include_router(assessment_templates_router, prefix="/api/v1")
 app.include_router(security_router, prefix="/api/v1")
 app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(audit_logs_router, prefix="/api/v1")

@@ -198,6 +198,56 @@ export interface AuditLog {
   timestamp: string;
 }
 
+// ── Assessment Templates ────────────────────────────────────────────────────
+
+export type TemplateQuestionType = "yes_no" | "text" | "multiple_choice" | "file_upload" | "rating";
+
+export const QUESTION_TYPE_LABELS: Record<TemplateQuestionType, string> = {
+  yes_no: "Yes / No",
+  text: "Text",
+  multiple_choice: "Multiple Choice",
+  file_upload: "File Upload",
+  rating: "Rating",
+};
+
+export const QUESTION_TYPE_ICONS: Record<TemplateQuestionType, string> = {
+  yes_no: "⊙",
+  text: "¶",
+  multiple_choice: "≡",
+  file_upload: "↑",
+  rating: "★",
+};
+
+export interface TemplateQuestion {
+  id: number;
+  template_id: number;
+  sort_order: number;
+  title: string;
+  description: string | null;
+  type: TemplateQuestionType;
+  options: string[] | null;
+  required: boolean;
+  created_at: string;
+}
+
+export interface AssessmentTemplate {
+  id: number;
+  name: string;
+  description: string | null;
+  criticality: VendorCriticality | null;
+  is_base_template: boolean;
+  version: number;
+  is_active: boolean;
+  created_by: string | null;
+  question_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssessmentTemplateDetail extends AssessmentTemplate {
+  questions: TemplateQuestion[];
+}
+
 export interface PaginatedResponse<T> {
   items: T[];
   total: number;

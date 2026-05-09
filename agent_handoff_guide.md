@@ -187,6 +187,28 @@ tprm-app/
 - ✅ `AssessmentForm` component (`components/AssessmentForm.tsx`) with VendorCombobox, type select, due date, assigned-to
 - ✅ Vendor 360° profile upgraded: assessment section now shows type label, `AssessmentStatusBadge`, View links, and `+ New Assessment` button
 - ✅ Email settings added to `backend/app/core/config.py` (`email_enabled`, `email_host`, `email_port`, `email_user`, `email_password`, `email_from`, `frontend_url`)
+- ✅ **Assessment Template Administration** — full template management system (Alembic migration `0004_assessment_templates.py`):
+  - New tables: `assessment_templates` (id, name, description, criticality, is_base_template, version, is_active, created_by, created_at, updated_at) and `assessment_template_questions` (id, template_id FK cascade, sort_order, title, description, type `templatequestiontype` enum, options JSONB, required, created_at)
+  - New PostgreSQL enum `templatequestiontype`: `yes_no | text | multiple_choice | file_upload | rating`
+  - 4 base templates seeded from existing `assessment_templates.py` service questions (no invented questions): Low (5q), Medium (10q), High (15q), Critical (15q — mirrors High, matching the existing service behaviour where both return `_FULL`)
+  - Question type migration: old `yesno`→`yes_no`, old `text`→`text`, old `multiline`→`text`
+  - Backend: `backend/app/models/assessment_template.py` — `AssessmentTemplate` + `AssessmentTemplateQuestion` SQLAlchemy models
+  - Backend: `backend/app/schemas/assessment_template.py` — `AssessmentTemplateRead`, `AssessmentTemplateDetail`, `AssessmentTemplateCreate`, `AssessmentTemplateUpdate`, `TemplateQuestionRead`, `TemplateQuestionCreate`
+  - Backend: `backend/app/api/v1/assessment_templates.py` — 7 endpoints:
+    - `GET /api/v1/assessment-templates` — list with filters (criticality, is_base_template, is_active, search), paginated, base templates ordered first
+    - `GET /api/v1/assessment-templates/{id}` — detail with all questions
+    - `POST /api/v1/assessment-templates` — create custom template (is_base_template always false)
+    - `PUT /api/v1/assessment-templates/{id}` — update name, description, criticality, is_active (base templates can be updated)
+    - `DELETE /api/v1/assessment-templates/{id}` — soft delete (sets is_active=false); returns 409 if is_base_template=true
+    - `POST /api/v1/assessment-templates/{id}/duplicate` — creates copy with "(Copy)" suffix; is_base_template=false
+    - `PUT /api/v1/assessment-templates/{id}/questions` — replace all questions atomically (full reorder + update)
+  - Frontend: `components/QuestionBuilder.tsx` — reusable question builder with up/down arrow reordering, inline edit form, add question form, type icons, multiple_choice tag-input for options
+  - Frontend: `/assessments/templates` — list page with search, criticality filter, base/custom filter, question count, active status, Edit/Duplicate/Delete actions
+  - Frontend: `/assessments/templates/new` — create custom template form with QuestionBuilder
+  - Frontend: `/assessments/templates/[id]/edit` — edit template (loads existing questions), shows warning banner for base templates
+  - Frontend types: `AssessmentTemplate`, `AssessmentTemplateDetail`, `TemplateQuestion`, `TemplateQuestionType`, `QUESTION_TYPE_LABELS`, `QUESTION_TYPE_ICONS` added to `frontend/lib/types.ts`
+  - Frontend API: `getAssessmentTemplates`, `getAssessmentTemplate`, `createAssessmentTemplate`, `updateAssessmentTemplate`, `deleteAssessmentTemplate`, `duplicateAssessmentTemplate`, `replaceTemplateQuestions` added to `frontend/lib/api.ts`
+  - Sidebar: "Templates" sub-item added under "Assessments" (indented, 12px, ↳ prefix)
 
 ### Phase 5 — Security Intelligence & AI Integration
 - ✅ `security_scan_results` table: `(asset_id, source)` unique, stores per-source `status` (pending/running/completed/failed) + `results` (JSONB) + `error`; Alembic migration `0003_security_intel.py`
@@ -293,4 +315,8 @@ tprm-app/
 - **Notifications API** — `GET /api/v1/notifications/alerts` is a read-only endpoint (no side effects). `POST /notifications/send-overdue` triggers emails. Neither endpoint is wired to a scheduled job yet — callers must invoke them manually or via cron.
 - **Audit log writes** — The `audit_logs` table exists and is read via `GET /api/v1/audit-logs`, but nothing currently writes to it. Phase 7 can add write calls in CRUD mutation endpoints using the pattern: `db.add(AuditLog(entity_type="vendor", entity_id=vendor.id, action="Create", changed_by=None, changes=payload.model_dump()))`.
 - **Notifications SMTP settings** — `notifications.py` reuses the same email settings from Phase 4: `settings.email_enabled`, `settings.email_host`, `settings.email_port`, `settings.email_from`. These are already in `backend/app/core/config.py` and `.env`. No new environment variables needed for notification emails.
+- **Assessment template questions sort_order** — The `assessment_template_questions` table uses `sort_order` (not `order`) as the column name to avoid SQL reserved word conflicts. Python attribute and DB column name are both `sort_order`.
+- **Base template question count** — Low: 5q, Medium: 10q, High: 15q, Critical: 15q. Critical mirrors High because the existing `assessment_templates.py` service returned `_FULL` (15q) for both High and Critical. The templates were seeded from this service with no invented questions. Custom templates can add more questions on top.
+- **Template soft delete** — `DELETE /api/v1/assessment-templates/{id}` sets `is_active=false` (soft delete). Base templates return 409 and cannot be deleted. Soft-deleted templates remain in the DB and can be restored by setting `is_active=true` via PUT.
+- **Template question type mapping** — Old `assessment_templates.py` service used `yesno|text|multiline`. The new `templatequestiontype` enum uses `yes_no|text|multiple_choice|file_upload|rating`. Mapping on seed: `yesno→yes_no`, `text→text`, `multiline→text` (no separate multiline type in the new system; the frontend QuestionBuilder uses a standard text input for both).
 - **Risk Register vs. Security Intelligence separation** — CVE findings from the Security Intelligence Panel are never auto-created as Risk Register entries. They live in `asset_vulnerabilities` and are shown only in the Security Intelligence Panel. Users promote findings manually via a per-finding 'Promote to Risk Register' button or a bulk 'Add selected to Risk Register' action with per-finding checkboxes and a select-all option. This is intentional and must not be reverted.

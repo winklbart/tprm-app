@@ -1,6 +1,8 @@
 import type {
   Assessment,
   AssessmentStatus,
+  AssessmentTemplate,
+  AssessmentTemplateDetail,
   AssessmentType,
   Asset,
   AssetVulnerability,
@@ -12,6 +14,8 @@ import type {
   RiskCategory,
   RiskStatus,
   SecurityScanResult,
+  TemplateQuestion,
+  TemplateQuestionType,
   Vendor,
   VendorCategory,
   VendorCriticality,
@@ -257,6 +261,74 @@ export function getAuditLogs(filters: AuditLogFilters = {}): Promise<PaginatedRe
   if (filters.offset != null) params.set("offset", String(filters.offset));
   const qs = params.toString();
   return fetchApi(`/api/v1/audit-logs${qs ? `?${qs}` : ""}`);
+}
+
+// --- Assessment Templates ---
+
+export interface AssessmentTemplateFilters {
+  criticality?: VendorCriticality;
+  is_base_template?: boolean;
+  is_active?: boolean;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export function getAssessmentTemplates(filters: AssessmentTemplateFilters = {}): Promise<PaginatedResponse<AssessmentTemplate>> {
+  const params = new URLSearchParams();
+  if (filters.criticality) params.set("criticality", filters.criticality);
+  if (filters.is_base_template != null) params.set("is_base_template", String(filters.is_base_template));
+  if (filters.is_active != null) params.set("is_active", String(filters.is_active));
+  if (filters.search) params.set("search", filters.search);
+  if (filters.limit != null) params.set("limit", String(filters.limit));
+  if (filters.offset != null) params.set("offset", String(filters.offset));
+  const qs = params.toString();
+  return fetchApi(`/api/v1/assessment-templates${qs ? `?${qs}` : ""}`);
+}
+
+export function getAssessmentTemplate(id: number): Promise<AssessmentTemplateDetail> {
+  return fetchApi(`/api/v1/assessment-templates/${id}`);
+}
+
+export interface TemplateQuestionPayload {
+  sort_order: number;
+  title: string;
+  description?: string | null;
+  type: TemplateQuestionType;
+  options?: string[] | null;
+  required: boolean;
+}
+
+export interface AssessmentTemplateCreatePayload {
+  name: string;
+  description?: string | null;
+  criticality?: VendorCriticality | null;
+  questions: TemplateQuestionPayload[];
+}
+
+export function createAssessmentTemplate(data: AssessmentTemplateCreatePayload): Promise<AssessmentTemplateDetail> {
+  return fetchApi("/api/v1/assessment-templates", { method: "POST", body: JSON.stringify(data) });
+}
+
+export function updateAssessmentTemplate(id: number, data: {
+  name?: string;
+  description?: string | null;
+  criticality?: VendorCriticality | null;
+  is_active?: boolean;
+}): Promise<AssessmentTemplateDetail> {
+  return fetchApi(`/api/v1/assessment-templates/${id}`, { method: "PUT", body: JSON.stringify(data) });
+}
+
+export function deleteAssessmentTemplate(id: number): Promise<void> {
+  return fetchApi(`/api/v1/assessment-templates/${id}`, { method: "DELETE" });
+}
+
+export function duplicateAssessmentTemplate(id: number): Promise<AssessmentTemplateDetail> {
+  return fetchApi(`/api/v1/assessment-templates/${id}/duplicate`, { method: "POST" });
+}
+
+export function replaceTemplateQuestions(id: number, questions: TemplateQuestionPayload[]): Promise<AssessmentTemplateDetail> {
+  return fetchApi(`/api/v1/assessment-templates/${id}/questions`, { method: "PUT", body: JSON.stringify(questions) });
 }
 
 // --- Security Intelligence ---

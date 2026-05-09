@@ -78,7 +78,7 @@ export default function RisksPage() {
   const handleBulkDelete = async () => {
     const count = selectedIds.size;
     if (!confirm(`Delete ${count} selected risk(s)? This cannot be undone.`)) return;
-    await Promise.all([...selectedIds].map((id) => deleteRisk(id)));
+    await Promise.all(Array.from(selectedIds).map((id) => deleteRisk(id)));
     load();
   };
 
