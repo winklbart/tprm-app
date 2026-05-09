@@ -74,6 +74,7 @@ export default function VendorsPage() {
           placeholder="Search name, email, country…"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setOffset(0); }}
+          onClear={() => { setSearch(""); setOffset(0); }}
           style={{ width: 240 }}
         />
         <Select value={criticality} onChange={(e) => { setCriticality(e.target.value as VendorCriticality | ""); setOffset(0); }} style={{ width: 150 }}>

@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { RiskScoreBadge, RiskStatusBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Select } from "@/components/ui/Input";
+import { Input, Select } from "@/components/ui/Input";
 import { Pagination } from "@/components/ui/Pagination";
 import { Topbar } from "@/components/ui/Topbar";
 import { deleteRisk, getRisks } from "@/lib/api";
@@ -19,15 +19,20 @@ export default function RisksPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [search, setSearch] = useState("");
   const [status, setStatus] = useState<RiskStatus | "">("");
   const [category, setCategory] = useState<RiskCategory | "">("");
   const [offset, setOffset] = useState(0);
 
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setSelectedIds(new Set());
     try {
       const res = await getRisks({
+        search: search || undefined,
         status: (status as RiskStatus) || undefined,
         category: (category as RiskCategory) || undefined,
         limit: LIMIT,
@@ -39,13 +44,41 @@ export default function RisksPage() {
     } finally {
       setLoading(false);
     }
-  }, [status, category, offset]);
+  }, [search, status, category, offset]);
 
   useEffect(() => { load(); }, [load]);
 
   const handleDelete = async (id: number, title: string) => {
     if (!confirm(`Delete risk "${title}"? This cannot be undone.`)) return;
     await deleteRisk(id);
+    load();
+  };
+
+  const handleToggle = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const items = data?.items ?? [];
+  const allSelected = items.length > 0 && items.every((r) => selectedIds.has(r.id));
+  const someSelected = items.some((r) => selectedIds.has(r.id));
+
+  const handleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(items.map((r) => r.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const count = selectedIds.size;
+    if (!confirm(`Delete ${count} selected risk(s)? This cannot be undone.`)) return;
+    await Promise.all([...selectedIds].map((id) => deleteRisk(id)));
     load();
   };
 
@@ -66,6 +99,13 @@ export default function RisksPage() {
       />
 
       <div className="flex flex-wrap gap-3 mb-4">
+        <Input
+          placeholder="Search title, description…"
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setOffset(0); }}
+          onClear={() => { setSearch(""); setOffset(0); }}
+          style={{ width: 240 }}
+        />
         <Select value={status} onChange={(e) => { setStatus(e.target.value as RiskStatus | ""); setOffset(0); }} style={{ width: 160 }}>
           <option value="">All statuses</option>
           {(["Open", "In Mitigation", "Accepted", "Closed"] as RiskStatus[]).map((s) => (
@@ -80,6 +120,25 @@ export default function RisksPage() {
         </Select>
       </div>
 
+      {selectedIds.size > 0 && (
+        <div
+          className="flex items-center justify-between mb-4"
+          style={{ background: "#131720", border: "0.5px solid #1e2433", borderRadius: 10, padding: "10px 16px" }}
+        >
+          <span className="text-sm" style={{ color: "#f1f5f9" }}>
+            {selectedIds.size} risk{selectedIds.size !== 1 ? "s" : ""} selected
+          </span>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setSelectedIds(new Set())}>
+              Clear
+            </Button>
+            <Button variant="danger" size="sm" onClick={handleBulkDelete}>
+              Delete selected
+            </Button>
+          </div>
+        </div>
+      )}
+
       <Card>
         {error && <p className="text-sm mb-3" style={{ color: "#f87171" }}>{error}</p>}
         {loading ? (
@@ -90,6 +149,15 @@ export default function RisksPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: "0.5px solid #1e2433" }}>
+                <th className="py-2 px-3">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    ref={(el) => { if (el) el.indeterminate = someSelected && !allSelected; }}
+                    onChange={handleSelectAll}
+                    style={{ accentColor: "#4f46e5", cursor: "pointer" }}
+                  />
+                </th>
                 {["Title", "Vendor", "Category", "Likelihood", "Impact", "Score", "Status", "Owner", "Actions"].map((h) => (
                   <th key={h} className="text-left py-2 px-3 font-medium" style={{ color: "#64748b" }}>{h}</th>
                 ))}
@@ -98,6 +166,14 @@ export default function RisksPage() {
             <tbody>
               {data.items.map((r) => (
                 <tr key={r.id} style={{ borderBottom: "0.5px solid #1e2433" }}>
+                  <td className="py-2 px-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(r.id)}
+                      onChange={() => handleToggle(r.id)}
+                      style={{ accentColor: "#4f46e5", cursor: "pointer" }}
+                    />
+                  </td>
                   <td className="py-2 px-3 font-medium" style={{ color: "#f1f5f9" }}>{r.title}</td>
                   <td className="py-2 px-3" style={{ color: "#64748b" }}>
                     {r.vendor_name ? (

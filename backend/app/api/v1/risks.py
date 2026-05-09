@@ -1,6 +1,7 @@
 import enum
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -28,6 +29,7 @@ def list_risks(
     asset_id: int | None = Query(None),
     status: RiskStatus | None = Query(None),
     category: RiskCategory | None = Query(None),
+    search: str | None = Query(None),
     limit: int = Query(25, ge=1, le=100),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -41,6 +43,8 @@ def list_risks(
         q = q.filter(Risk.status == status)
     if category:
         q = q.filter(Risk.category == category)
+    if search:
+        q = q.filter(or_(Risk.title.ilike(f"%{search}%"), Risk.description.ilike(f"%{search}%")))
 
     total = q.count()
     items = q.order_by(Risk.risk_score.desc()).offset(offset).limit(limit).all()

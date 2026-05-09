@@ -27,6 +27,9 @@ export async function fetchApi<T>(path: string, options?: RequestInit): Promise<
   if (!res.ok) {
     throw new Error(`API error ${res.status}: ${await res.text()}`);
   }
+  if (res.status === 204) {
+    return undefined as unknown as T;
+  }
   return res.json() as Promise<T>;
 }
 
@@ -129,6 +132,7 @@ export interface RiskFilters {
   asset_id?: number;
   status?: RiskStatus;
   category?: RiskCategory;
+  search?: string;
   limit?: number;
   offset?: number;
 }
@@ -139,6 +143,7 @@ export function getRisks(filters: RiskFilters = {}): Promise<PaginatedResponse<R
   if (filters.asset_id != null) params.set("asset_id", String(filters.asset_id));
   if (filters.status) params.set("status", filters.status);
   if (filters.category) params.set("category", filters.category);
+  if (filters.search) params.set("search", filters.search);
   if (filters.limit != null) params.set("limit", String(filters.limit));
   if (filters.offset != null) params.set("offset", String(filters.offset));
   const qs = params.toString();

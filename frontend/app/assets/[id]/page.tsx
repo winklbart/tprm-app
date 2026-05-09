@@ -75,7 +75,7 @@ export default function AssetDetailPage() {
         </div>
       </Card>
 
-      <SecurityIntelPanel assetId={asset.id} />
+      <SecurityIntelPanel assetId={asset.id} vendorId={asset.vendor_id} />
     </div>
   );
 }

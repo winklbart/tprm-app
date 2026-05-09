@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.asset import Asset
-from app.models.risk import Risk
 from app.models.security import AssetVulnerability, SecurityScanResult
 from app.models.vendor import Vendor
 
@@ -98,30 +97,5 @@ def run(db: Session, asset: Asset, vendor: Vendor | None) -> dict:
         return {"error": f"Claude returned non-JSON: {exc}", "raw": raw[:500] if "raw" in dir() else ""}
     except Exception as exc:
         return {"error": str(exc)}
-
-    # Auto-create suggested risks
-    for risk_data in result.get("suggested_risks", []):
-        title = risk_data.get("title", "")
-        if not title:
-            continue
-        existing = db.query(Risk).filter(Risk.vendor_id == asset.vendor_id, Risk.title == title).first()
-        if not existing:
-            likelihood = max(1, min(5, int(risk_data.get("likelihood", 3))))
-            impact = max(1, min(5, int(risk_data.get("impact", 3))))
-            category = risk_data.get("category", "Operational")
-            if category not in ("Data Privacy", "Operational", "Financial", "Compliance", "Reputational"):
-                category = "Operational"
-            db.add(Risk(
-                vendor_id=asset.vendor_id,
-                asset_id=asset.id,
-                title=title,
-                description="Auto-generated from AI security analysis.",
-                category=category,
-                likelihood=likelihood,
-                impact=impact,
-                risk_score=likelihood * impact,
-                status="Open",
-            ))
-    db.commit()
 
     return result

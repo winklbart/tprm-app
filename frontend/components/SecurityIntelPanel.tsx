@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { getSecurityScanStatus, triggerSecurityScan } from "@/lib/api";
+import { createRisk, getSecurityScanStatus, triggerSecurityScan } from "@/lib/api";
 import type { ScanSource, ScanStatus, SecurityScanResult } from "@/lib/types";
 
 // ── typed result shapes ──────────────────────────────────────────────────────
@@ -56,6 +57,14 @@ const SEV_COLORS: Record<string, string> = {
 
 const clearStyle: React.CSSProperties = { color: "#86efac", fontSize: 12, marginTop: 8 };
 
+function sevToLikelihood(sev: string): number {
+  return sev === "Critical" ? 4 : sev === "High" ? 3 : sev === "Medium" ? 2 : 1;
+}
+
+function sevToImpact(sev: string): number {
+  return sev === "Critical" ? 5 : sev === "High" ? 4 : sev === "Medium" ? 3 : 2;
+}
+
 function Skeleton() {
   return (
     <div className="flex flex-col gap-2 mt-2">
@@ -72,28 +81,49 @@ function SeverityDot({ sev }: { sev: string }) {
 
 // ── per-source result renderers ───────────────────────────────────────────────
 
-function NvdResults({ results }: { results: Record<string, unknown> }) {
+interface NvdResultsProps {
+  results: Record<string, unknown>;
+  selectedIds: Set<string>;
+  onToggle: (id: string) => void;
+  onPromoteSingle: (cve: CveItem) => void;
+}
+
+function NvdResults({ results, selectedIds, onToggle, onPromoteSingle }: NvdResultsProps) {
   const r = results as unknown as NvdResult;
   const cves = r.cves ?? [];
   if (r.error) return <p style={{ color: "#f87171", fontSize: 12, marginTop: 8 }}>Error: {r.error}</p>;
   if (cves.length === 0) return <p style={clearStyle}>✓ No CVEs found</p>;
   return (
     <div className="flex flex-col gap-2 mt-2">
-      {cves.slice(0, 8).map((c) => (
+      {cves.map((c) => (
         <div key={c.cve_id} className="flex items-start gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={selectedIds.has(c.cve_id)}
+            onChange={() => onToggle(c.cve_id)}
+            style={{ marginTop: 2, accentColor: "#4f46e5", flexShrink: 0, cursor: "pointer" }}
+          />
           <SeverityDot sev={c.severity} />
-          <div>
-            <a href={c.url} target="_blank" rel="noreferrer" style={{ color: "#818cf8" }}>{c.cve_id}</a>
-            <span style={{ color: "#64748b" }}> · CVSS {c.cvss_score != null ? c.cvss_score.toFixed(1) : "?"}</span>
-            {c.epss_score != null && (
-              <span style={{ color: "#64748b" }}> · EPSS {(c.epss_score * 100).toFixed(1)}%</span>
-            )}
-            {c.in_cisa_kev && <span style={{ color: "#f87171" }}> ⚠ KEV</span>}
-            <p style={{ color: "#94a3b8", marginTop: 2 }}>{c.description.slice(0, 100)}</p>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center flex-wrap gap-x-1">
+              <a href={c.url} target="_blank" rel="noreferrer" style={{ color: "#818cf8" }}>{c.cve_id}</a>
+              <span style={{ color: "#64748b" }}>· CVSS {c.cvss_score != null ? c.cvss_score.toFixed(1) : "?"}</span>
+              {c.epss_score != null && (
+                <span style={{ color: "#64748b" }}>· EPSS {(c.epss_score * 100).toFixed(1)}%</span>
+              )}
+              {c.in_cisa_kev && <span style={{ color: "#f87171" }}>⚠ KEV</span>}
+            </div>
+            <p style={{ color: "#94a3b8", marginTop: 2 }}>{(c.description || "").slice(0, 100)}</p>
           </div>
+          <button
+            onClick={() => onPromoteSingle(c)}
+            style={{ color: "#818cf8", background: "none", border: "none", cursor: "pointer", padding: "2px 0", fontSize: 11, flexShrink: 0, opacity: 0.8 }}
+            title="Open pre-filled Risk form"
+          >
+            Promote →
+          </button>
         </div>
       ))}
-      {cves.length > 8 && <p style={{ color: "#64748b", fontSize: 11 }}>+{cves.length - 8} more</p>}
     </div>
   );
 }
@@ -202,9 +232,19 @@ function AiResults({ results }: { results: Record<string, unknown> }) {
         </div>
       )}
       {(r.suggested_risks ?? []).length > 0 && (
-        <p className="text-xs" style={{ color: "#64748b" }}>
-          {r.suggested_risks!.length} risk(s) auto-added to Risk Register
-        </p>
+        <div>
+          <p className="text-xs font-medium mb-1" style={{ color: "#64748b" }}>
+            Suggested Risks ({r.suggested_risks!.length})
+          </p>
+          <div className="flex flex-col gap-1">
+            {r.suggested_risks!.map((sr, i) => (
+              <div key={i} className="text-xs" style={{ color: "#94a3b8" }}>
+                <span style={{ fontWeight: 500 }}>{sr.title}</span>
+                <span style={{ color: "#64748b" }}> · {sr.category} · Score {sr.likelihood * sr.impact}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -212,7 +252,15 @@ function AiResults({ results }: { results: Record<string, unknown> }) {
 
 // ── card ─────────────────────────────────────────────────────────────────────
 
-function SourceCard({ source, result, assetId }: { source: ScanSource; result: SecurityScanResult | undefined; assetId: number }) {
+interface SourceCardProps {
+  source: ScanSource;
+  result: SecurityScanResult | undefined;
+  selectedCveIds: Set<string>;
+  onCveToggle: (id: string) => void;
+  onPromoteSingle: (cve: CveItem) => void;
+}
+
+function SourceCard({ source, result, selectedCveIds, onCveToggle, onPromoteSingle }: SourceCardProps) {
   const meta = SOURCE_META[source];
   const status: ScanStatus | "idle" = result?.status ?? "idle";
 
@@ -230,7 +278,14 @@ function SourceCard({ source, result, assetId }: { source: ScanSource; result: S
 
       {status === "completed" && result?.results && (
         <>
-          {source === "nvd"      && <NvdResults  results={result.results} />}
+          {source === "nvd" && (
+            <NvdResults
+              results={result.results}
+              selectedIds={selectedCveIds}
+              onToggle={onCveToggle}
+              onPromoteSingle={onPromoteSingle}
+            />
+          )}
           {source === "cisa_kev" && <KevResults  results={result.results} />}
           {source === "epss"     && <EpssResults results={result.results} />}
           {source === "osv"      && <OsvResults  results={result.results} />}
@@ -292,12 +347,19 @@ function Stat({ label, value, color }: { label: string; value: number; color: st
 
 // ── main component ────────────────────────────────────────────────────────────
 
-interface Props { assetId: number }
+interface Props {
+  assetId: number;
+  vendorId: number;
+}
 
-export default function SecurityIntelPanel({ assetId }: Props) {
+export default function SecurityIntelPanel({ assetId, vendorId }: Props) {
+  const router = useRouter();
   const [results, setResults] = useState<SecurityScanResult[]>([]);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedCveIds, setSelectedCveIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<null | "saving" | "done" | "error">(null);
+  const [bulkCount, setBulkCount] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPolling = useCallback(() => {
@@ -324,6 +386,8 @@ export default function SecurityIntelPanel({ assetId }: Props) {
   const handleScan = async () => {
     setError(null);
     setScanning(true);
+    setSelectedCveIds(new Set());
+    setBulkStatus(null);
     try {
       await triggerSecurityScan(assetId);
       await fetchStatus();
@@ -334,25 +398,132 @@ export default function SecurityIntelPanel({ assetId }: Props) {
     }
   };
 
+  const nvdResult = results.find((r) => r.source === "nvd");
+  const nvdCves: CveItem[] = ((nvdResult?.results as unknown as NvdResult | null)?.cves) ?? [];
+  const allSelected = nvdCves.length > 0 && nvdCves.every((c) => selectedCveIds.has(c.cve_id));
+
+  const handleSelectAll = () => {
+    if (allSelected) {
+      setSelectedCveIds(new Set());
+    } else {
+      setSelectedCveIds(new Set(nvdCves.map((c) => c.cve_id)));
+    }
+  };
+
+  const handleCveToggle = (id: string) => {
+    setSelectedCveIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handlePromoteSingle = (cve: CveItem) => {
+    const title = `${cve.cve_id}: ${(cve.description || "").slice(0, 120)}`;
+    const description = cve.description ? `${cve.cve_id}: ${cve.description}`.slice(0, 500) : "";
+    const params = new URLSearchParams({
+      vendor_id: String(vendorId),
+      asset_id: String(assetId),
+      title,
+      description,
+      category: "Operational",
+      likelihood: String(sevToLikelihood(cve.severity)),
+      impact: String(sevToImpact(cve.severity)),
+    });
+    router.push(`/risks/new?${params.toString()}`);
+  };
+
+  const handleBulkPromote = async () => {
+    const toCreate = nvdCves.filter((c) => selectedCveIds.has(c.cve_id));
+    setBulkStatus("saving");
+    try {
+      for (const cve of toCreate) {
+        await createRisk({
+          vendor_id: vendorId,
+          asset_id: assetId,
+          assessment_id: null,
+          title: `${cve.cve_id}: ${(cve.description || "").slice(0, 120)}`,
+          description: cve.description ? `${cve.cve_id}: ${cve.description}`.slice(0, 500) : null,
+          category: "Operational",
+          likelihood: sevToLikelihood(cve.severity),
+          impact: sevToImpact(cve.severity),
+          mitigation_plan: null,
+          owner: null,
+          status: "Open",
+        });
+      }
+      setBulkCount(toCreate.length);
+      setBulkStatus("done");
+      setSelectedCveIds(new Set());
+    } catch {
+      setBulkStatus("error");
+    }
+  };
+
   const bySource = Object.fromEntries(results.map((r) => [r.source, r])) as Record<ScanSource, SecurityScanResult | undefined>;
 
   return (
     <Card>
-      <div className="flex items-start justify-between mb-4">
+      <div className="flex items-start justify-between mb-2">
         <div>
           <h2 className="text-sm font-semibold" style={{ color: "#f1f5f9" }}>Security Intelligence</h2>
           <SummaryBar results={results} />
         </div>
-        <Button size="sm" onClick={handleScan} disabled={scanning}>
-          {scanning ? "Scanning…" : results.length > 0 ? "Re-scan" : "Run Security Scan"}
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {nvdCves.length > 0 && (
+            <label
+              className="flex items-center gap-1.5 text-xs"
+              style={{ color: "#64748b", cursor: "pointer", userSelect: "none" }}
+            >
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={handleSelectAll}
+                style={{ accentColor: "#4f46e5", cursor: "pointer" }}
+              />
+              All CVEs
+            </label>
+          )}
+          {selectedCveIds.size > 0 && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={handleBulkPromote}
+              disabled={bulkStatus === "saving"}
+            >
+              {bulkStatus === "saving" ? "Saving…" : `Add ${selectedCveIds.size} to Risk Register`}
+            </Button>
+          )}
+          <Button size="sm" onClick={handleScan} disabled={scanning}>
+            {scanning ? "Scanning…" : results.length > 0 ? "Re-scan" : "Run Security Scan"}
+          </Button>
+        </div>
       </div>
+
+      {bulkStatus === "done" && (
+        <p className="text-xs mb-2" style={{ color: "#86efac" }}>
+          ✓ {bulkCount} risk(s) added to the Risk Register.
+        </p>
+      )}
+      {bulkStatus === "error" && (
+        <p className="text-xs mb-2" style={{ color: "#f87171" }}>
+          Failed to create some risks. Please try again.
+        </p>
+      )}
 
       {error && <p className="text-xs mb-3" style={{ color: "#f87171" }}>{error}</p>}
 
       <div className="grid grid-cols-2 gap-3">
         {SOURCES.map((src) => (
-          <SourceCard key={src} source={src} result={bySource[src]} assetId={assetId} />
+          <SourceCard
+            key={src}
+            source={src}
+            result={bySource[src]}
+            selectedCveIds={selectedCveIds}
+            onCveToggle={handleCveToggle}
+            onPromoteSingle={handlePromoteSingle}
+          />
         ))}
       </div>
 

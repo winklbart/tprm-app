@@ -66,6 +66,7 @@ export default function AssetsPage() {
           placeholder="Search name…"
           value={search}
           onChange={(e) => { setSearch(e.target.value); setOffset(0); }}
+          onClear={() => { setSearch(""); setOffset(0); }}
           style={{ width: 220 }}
         />
         <Select value={type} onChange={(e) => { setType(e.target.value as AssetType | ""); setOffset(0); }} style={{ width: 150 }}>

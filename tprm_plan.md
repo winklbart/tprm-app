@@ -285,7 +285,7 @@ Every Asset and Vendor profile displays a Security Intelligence Panel. Each data
 - New endpoint: `POST /api/v1/assets/{id}/security-scan` triggers all sources
 - New endpoint: `GET /api/v1/assets/{id}/security-scan/status` returns per-source status and results
 - New table `security_scan_results`: `id`, `asset_id`, `source` (nvd / cisa_kev / epss / osv / hibp / ai), `status` (pending / running / completed / failed), `results` (JSONB), `scanned_at`
-- CVEs with Critical or High severity, or appearing in CISA KEV, automatically create a Risk entry in the Risk Register linked to the asset
+- CVE findings and Security Intelligence results are intentionally separated from the Risk Register. Auto-creation of Risk Register entries is disabled. Findings live exclusively in the asset_vulnerabilities table and are displayed only in the Security Intelligence Panel on the Asset profile and Vendor 360° view. Users promote findings to the Risk Register manually via two options: a 'Promote to Risk Register' button per individual finding (opens a pre-filled Risk form for review before saving), and a 'Add selected to Risk Register' bulk action with a checkbox per finding and a select-all checkbox in the panel header. Bulk promotion creates pre-filled Risk entries for all selected findings simultaneously. This keeps the Risk Register focused on actively managed risks and prevents auto-generated CVE data from cluttering it.
 
 #### Frontend Implementation
 - Security Intelligence Panel component shown on Asset profile page and Vendor 360° view

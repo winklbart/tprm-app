@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.asset import Asset
-from app.models.risk import Risk
 from app.models.security import AssetVulnerability
 from app.models.vendor import Vendor
 
@@ -60,27 +59,6 @@ def _get_description(cve) -> str:
     return getattr(descs[0], "value", "") if descs else ""
 
 
-def _auto_create_risk(db: Session, asset: Asset, vendor: Vendor, cve_id: str, description: str, severity: str, score: float | None) -> None:
-    title = f"{cve_id}: {description[:120]}" if description else cve_id
-    existing = db.query(Risk).filter(Risk.asset_id == asset.id, Risk.title == title).first()
-    if existing:
-        return
-    likelihood = 4 if severity == "Critical" else 3
-    impact = 5 if severity == "Critical" else 4
-    risk = Risk(
-        vendor_id=asset.vendor_id,
-        asset_id=asset.id,
-        title=title,
-        description=f"Auto-created from NVD CVE scan. CVSS: {score}",
-        category="Operational",
-        likelihood=likelihood,
-        impact=impact,
-        risk_score=likelihood * impact,
-        status="Open",
-    )
-    db.add(risk)
-
-
 def run(db: Session, asset: Asset, vendor: Vendor | None) -> dict:
     try:
         import nvdlib
@@ -132,9 +110,6 @@ def run(db: Session, asset: Asset, vendor: Vendor | None) -> dict:
             "published_date": published,
             "url": url,
         })
-
-        if severity in ("Critical", "High") and vendor:
-            _auto_create_risk(db, asset, vendor, cve_id, description, severity, score)
 
     db.commit()
     return {"cves": results, "total": len(results)}
