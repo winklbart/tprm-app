@@ -19,6 +19,19 @@ VALID_CRITICALITIES = {"Low", "Medium", "High", "Critical"}
 VALID_QUESTION_TYPES = {"yes_no", "text", "multiple_choice", "file_upload", "rating"}
 
 
+def _enforce_single_active(db: Session, template_id: int, criticality: str | None) -> None:
+    """When activating a template for a specific criticality, deactivate all others with the same criticality.
+    No-op for templates without a criticality assignment (criticality=None).
+    """
+    if not criticality:
+        return
+    db.query(AssessmentTemplate).filter(
+        AssessmentTemplate.criticality == criticality,
+        AssessmentTemplate.id != template_id,
+        AssessmentTemplate.is_active == True,
+    ).update({"is_active": False}, synchronize_session=False)
+
+
 def _build_read(tmpl: AssessmentTemplate, question_count: int) -> AssessmentTemplateRead:
     r = AssessmentTemplateRead.model_validate(tmpl)
     r.question_count = question_count
@@ -103,6 +116,9 @@ def create_template(payload: AssessmentTemplateCreate, db: Session = Depends(get
     db.add(tmpl)
     db.flush()
 
+    # New templates are always created active — deactivate siblings for the same criticality
+    _enforce_single_active(db, tmpl.id, payload.criticality)
+
     for i, q in enumerate(payload.questions):
         db.add(AssessmentTemplateQuestion(
             template_id=tmpl.id,
@@ -133,8 +149,14 @@ def update_template(template_id: int, payload: AssessmentTemplateUpdate, db: Ses
     if payload.criticality and payload.criticality not in VALID_CRITICALITIES:
         raise HTTPException(status_code=422, detail=f"Invalid criticality: {payload.criticality}")
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    for field, value in updates.items():
         setattr(tmpl, field, value)
+
+    # If activating this template, deactivate all other templates with the same criticality
+    if updates.get("is_active") is True:
+        effective_criticality = updates.get("criticality") or tmpl.criticality
+        _enforce_single_active(db, tmpl.id, effective_criticality)
 
     db.commit()
     db.refresh(tmpl)
@@ -174,6 +196,9 @@ def duplicate_template(template_id: int, db: Session = Depends(get_db)):
     )
     db.add(copy)
     db.flush()
+
+    # Duplicate starts active — deactivate siblings for the same criticality
+    _enforce_single_active(db, copy.id, source.criticality)
 
     source_questions = (
         db.query(AssessmentTemplateQuestion)

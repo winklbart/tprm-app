@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.assessment import Assessment
+from app.models.assessment_template import AssessmentTemplate, AssessmentTemplateQuestion
 from app.models.vendor import Vendor
 from app.schemas.assessment import AssessmentCreate, AssessmentRead, AssessmentUpdate
 from app.schemas.common import PaginatedResponse
@@ -18,6 +19,81 @@ from app.services.assessment_templates import get_template_questions
 
 router = APIRouter(prefix="/assessments", tags=["assessments"])
 public_router = APIRouter(prefix="/public/assessments", tags=["public"])
+
+_QUESTION_TYPE_MAP = {
+    "yes_no": "yesno",
+    "text": "text",
+    "multiple_choice": "text",
+    "file_upload": "text",
+    "rating": "text",
+}
+
+
+def _template_qs_to_assessment_format(questions: list[AssessmentTemplateQuestion]) -> list[dict]:
+    """Convert new-style template questions to the legacy assessment JSONB format."""
+    return [
+        {
+            "id": f"q{q.sort_order}",
+            "question": q.title,
+            "type": _QUESTION_TYPE_MAP.get(q.type, "text"),
+        }
+        for q in questions
+    ]
+
+
+def _resolve_questions(db: Session, assessment_type: str, vendor_criticality: str) -> list[dict]:
+    """Resolve the questions for a new assessment.
+
+    For self_assessment, queries the DB for the active template:
+      1. Active custom template for the criticality (is_base_template=False)
+      2. Base template for the criticality (active flag is ignored — always the fallback)
+      3. Hardcoded service (safety net if no templates seeded)
+
+    All other types (trust_center, access_to_information, ai_check) continue to use
+    the hardcoded service unchanged.
+    """
+    if assessment_type != "self_assessment":
+        return get_template_questions(assessment_type, vendor_criticality)
+
+    # 1. Active custom template
+    custom = (
+        db.query(AssessmentTemplate)
+        .filter(
+            AssessmentTemplate.criticality == vendor_criticality,
+            AssessmentTemplate.is_active == True,
+            AssessmentTemplate.is_base_template == False,
+        )
+        .first()
+    )
+    if custom:
+        qs = (
+            db.query(AssessmentTemplateQuestion)
+            .filter(AssessmentTemplateQuestion.template_id == custom.id)
+            .order_by(AssessmentTemplateQuestion.sort_order)
+            .all()
+        )
+        return _template_qs_to_assessment_format(qs)
+
+    # 2. Base template (always the fallback regardless of is_active)
+    base = (
+        db.query(AssessmentTemplate)
+        .filter(
+            AssessmentTemplate.criticality == vendor_criticality,
+            AssessmentTemplate.is_base_template == True,
+        )
+        .first()
+    )
+    if base:
+        qs = (
+            db.query(AssessmentTemplateQuestion)
+            .filter(AssessmentTemplateQuestion.template_id == base.id)
+            .order_by(AssessmentTemplateQuestion.sort_order)
+            .all()
+        )
+        return _template_qs_to_assessment_format(qs)
+
+    # 3. Hardcoded fallback (safety net)
+    return get_template_questions(assessment_type, vendor_criticality)
 
 
 class PublicSubmitPayload(BaseModel):
@@ -76,7 +152,7 @@ def create_assessment(payload: AssessmentCreate, db: Session = Depends(get_db)):
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
 
-    questions = get_template_questions(payload.type, vendor.criticality)
+    questions = _resolve_questions(db, payload.type, vendor.criticality)
 
     assessment = Assessment(
         vendor_id=payload.vendor_id,

@@ -89,7 +89,9 @@ export default function TemplatesPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Optimistic toggle — flip in local state first, revert on API error
+  // Optimistic toggle. Toggling OFF: update single item, no reload needed.
+  // Toggling ON: after API success, reload the full list so deactivated siblings
+  // (same criticality, now is_active=false) are reflected immediately.
   const handleToggleActive = async (t: AssessmentTemplate) => {
     const next = !t.is_active;
     setData((prev) => prev ? {
@@ -98,6 +100,10 @@ export default function TemplatesPage() {
     } : prev);
     try {
       await updateAssessmentTemplate(t.id, { is_active: next });
+      if (next) {
+        // Activation may have deactivated other templates with the same criticality
+        load();
+      }
     } catch {
       setData((prev) => prev ? {
         ...prev,
@@ -180,7 +186,23 @@ export default function TemplatesPage() {
             <tbody>
               {items.map((t) => (
                 <tr key={t.id} style={{ borderBottom: "0.5px solid #1e2433" }}>
-                  <td className="py-2 px-3 font-medium" style={{ color: "#f1f5f9" }}>{t.name}</td>
+                  <td className="py-2 px-3 font-medium" style={{ color: "#f1f5f9" }}>
+                    <span>{t.name}</span>
+                    {t.is_active && t.criticality && (
+                      <span
+                        className="ml-2 text-xs font-normal px-1.5 py-0.5"
+                        style={{
+                          borderRadius: 6,
+                          color: "#86efac",
+                          background: "#1f2a1a",
+                          border: "0.5px solid #86efac30",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Active for {t.criticality}
+                      </span>
+                    )}
+                  </td>
                   <td className="py-2 px-3">
                     {t.criticality ? (
                       <CriticalityBadge value={t.criticality} />
