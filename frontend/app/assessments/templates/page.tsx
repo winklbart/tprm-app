@@ -13,11 +13,51 @@ import {
   deleteAssessmentTemplate,
   duplicateAssessmentTemplate,
   getAssessmentTemplates,
+  updateAssessmentTemplate,
 } from "@/lib/api";
 import type { AssessmentTemplate, VendorCriticality } from "@/lib/types";
 
 const LIMIT = 25;
 const CRITICALITIES: VendorCriticality[] = ["Low", "Medium", "High", "Critical"];
+
+// ── inline toggle ────────────────────────────────────────────────────────────
+
+function ActiveToggle({ active, onChange }: { active: boolean; onChange: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      title={active ? "Click to deactivate" : "Click to activate"}
+      style={{
+        width: 36,
+        height: 20,
+        borderRadius: 10,
+        background: active ? "#4f46e5" : "#1e2433",
+        border: `0.5px solid ${active ? "#4f46e5" : "#64748b"}`,
+        cursor: "pointer",
+        position: "relative",
+        padding: 0,
+        flexShrink: 0,
+        transition: "background 0.15s, border-color 0.15s",
+      }}
+    >
+      <span
+        style={{
+          position: "absolute",
+          top: 3,
+          left: active ? 17 : 3,
+          width: 12,
+          height: 12,
+          borderRadius: "50%",
+          background: "#f1f5f9",
+          transition: "left 0.15s",
+        }}
+      />
+    </button>
+  );
+}
+
+// ── page ─────────────────────────────────────────────────────────────────────
 
 export default function TemplatesPage() {
   const [data, setData] = useState<{ items: AssessmentTemplate[]; total: number } | null>(null);
@@ -49,13 +89,29 @@ export default function TemplatesPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Optimistic toggle — flip in local state first, revert on API error
+  const handleToggleActive = async (t: AssessmentTemplate) => {
+    const next = !t.is_active;
+    setData((prev) => prev ? {
+      ...prev,
+      items: prev.items.map((item) => item.id === t.id ? { ...item, is_active: next } : item),
+    } : prev);
+    try {
+      await updateAssessmentTemplate(t.id, { is_active: next });
+    } catch {
+      setData((prev) => prev ? {
+        ...prev,
+        items: prev.items.map((item) => item.id === t.id ? { ...item, is_active: t.is_active } : item),
+      } : prev);
+    }
+  };
+
   const handleDuplicate = async (id: number) => {
     await duplicateAssessmentTemplate(id);
     load();
   };
 
   const handleDelete = async (t: AssessmentTemplate) => {
-    if (t.is_base_template) return;
     if (!confirm(`Deactivate template "${t.name}"? It will no longer appear by default.`)) return;
     try {
       await deleteAssessmentTemplate(t.id);
@@ -116,7 +172,7 @@ export default function TemplatesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr style={{ borderBottom: "0.5px solid #1e2433" }}>
-                {["Name", "Criticality", "Type", "Questions", "Status", "Actions"].map((h) => (
+                {["Name", "Criticality", "Type", "Questions", "Active", "Actions"].map((h) => (
                   <th key={h} className="text-left py-2 px-3 font-medium" style={{ color: "#64748b" }}>{h}</th>
                 ))}
               </tr>
@@ -151,17 +207,19 @@ export default function TemplatesPage() {
                   </td>
                   <td className="py-2 px-3" style={{ color: "#94a3b8" }}>{t.question_count}</td>
                   <td className="py-2 px-3">
-                    {t.is_active ? (
-                      <span style={{ color: "#86efac", fontSize: 12 }}>Active</span>
-                    ) : (
-                      <span style={{ color: "#64748b", fontSize: 12 }}>Inactive</span>
-                    )}
+                    <ActiveToggle active={t.is_active} onChange={() => handleToggleActive(t)} />
                   </td>
                   <td className="py-2 px-3">
                     <div className="flex gap-1.5">
-                      <Link href={`/assessments/templates/${t.id}/edit`}>
-                        <Button variant="secondary" size="sm">Edit</Button>
-                      </Link>
+                      {t.is_base_template ? (
+                        <Link href={`/assessments/templates/${t.id}/edit`}>
+                          <Button variant="secondary" size="sm">View</Button>
+                        </Link>
+                      ) : (
+                        <Link href={`/assessments/templates/${t.id}/edit`}>
+                          <Button variant="secondary" size="sm">Edit</Button>
+                        </Link>
+                      )}
                       <Button
                         variant="secondary"
                         size="sm"
