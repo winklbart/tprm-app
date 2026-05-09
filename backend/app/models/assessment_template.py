@@ -27,6 +27,11 @@ _vendor_criticality_col = Enum(
     create_constraint=False,
 )
 
+_template_assessment_type_col = Enum(
+    "self_assessment", "trust_center", "access_to_information", "ai_check",
+    name="templateassessmenttype",
+)
+
 
 class AssessmentTemplate(Base):
     __tablename__ = "assessment_templates"
@@ -35,6 +40,7 @@ class AssessmentTemplate(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     criticality: Mapped[str | None] = mapped_column(_vendor_criticality_col)
+    type: Mapped[str] = mapped_column(_template_assessment_type_col, nullable=False, default="self_assessment")
     is_base_template: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

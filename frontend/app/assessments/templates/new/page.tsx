@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 
 import QuestionBuilder from "@/components/QuestionBuilder";
 import { Button } from "@/components/ui/Button";
@@ -10,15 +10,28 @@ import { Input, Select, TextArea } from "@/components/ui/Input";
 import { Topbar } from "@/components/ui/Topbar";
 import { createAssessmentTemplate } from "@/lib/api";
 import type { TemplateQuestionPayload } from "@/lib/api";
-import type { VendorCriticality } from "@/lib/types";
+import type { AssessmentType, VendorCriticality } from "@/lib/types";
+import { ASSESSMENT_TYPE_LABELS } from "@/lib/types";
 
 const CRITICALITIES: VendorCriticality[] = ["Low", "Medium", "High", "Critical"];
 
-export default function NewTemplatePage() {
+const ASSESSMENT_TYPES: AssessmentType[] = [
+  "self_assessment",
+  "trust_center",
+  "access_to_information",
+  "ai_check",
+];
+
+// ── content (useSearchParams requires Suspense wrapper) ───────────────────────
+
+function NewTemplateContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialType = (searchParams.get("type") as AssessmentType | null) ?? "self_assessment";
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [assessmentType, setAssessmentType] = useState<AssessmentType>(initialType);
   const [criticality, setCriticality] = useState<VendorCriticality | "">("");
   const [questions, setQuestions] = useState<TemplateQuestionPayload[]>([]);
   const [saving, setSaving] = useState(false);
@@ -34,9 +47,10 @@ export default function NewTemplatePage() {
         name: name.trim(),
         description: description.trim() || null,
         criticality: criticality || null,
+        type: assessmentType,
         questions,
       });
-      router.push("/assessments/templates");
+      router.push(`/assessments/templates?type=${assessmentType}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to create template");
     } finally {
@@ -71,6 +85,15 @@ export default function NewTemplatePage() {
               />
             </div>
             <Select
+              label="Assessment type *"
+              value={assessmentType}
+              onChange={(e) => setAssessmentType(e.target.value as AssessmentType)}
+            >
+              {ASSESSMENT_TYPES.map((t) => (
+                <option key={t} value={t}>{ASSESSMENT_TYPE_LABELS[t]}</option>
+              ))}
+            </Select>
+            <Select
               label="Criticality (optional)"
               value={criticality}
               onChange={(e) => setCriticality(e.target.value as VendorCriticality | "")}
@@ -93,7 +116,11 @@ export default function NewTemplatePage() {
         {error && <p className="text-sm" style={{ color: "#f87171" }}>{error}</p>}
 
         <div className="flex gap-2 justify-end">
-          <Button type="button" variant="secondary" onClick={() => router.push("/assessments/templates")}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => router.push(`/assessments/templates?type=${assessmentType}`)}
+          >
             Cancel
           </Button>
           <Button type="submit" disabled={saving || !name.trim()}>
@@ -102,5 +129,15 @@ export default function NewTemplatePage() {
         </div>
       </form>
     </div>
+  );
+}
+
+// ── page ──────────────────────────────────────────────────────────────────────
+
+export default function NewTemplatePage() {
+  return (
+    <Suspense fallback={null}>
+      <NewTemplateContent />
+    </Suspense>
   );
 }

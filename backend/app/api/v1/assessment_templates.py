@@ -17,15 +17,18 @@ router = APIRouter(prefix="/assessment-templates", tags=["assessment-templates"]
 
 VALID_CRITICALITIES = {"Low", "Medium", "High", "Critical"}
 VALID_QUESTION_TYPES = {"yes_no", "text", "multiple_choice", "file_upload", "rating"}
+VALID_ASSESSMENT_TYPES = {"self_assessment", "trust_center", "access_to_information", "ai_check"}
 
 
-def _enforce_single_active(db: Session, template_id: int, criticality: str | None) -> None:
-    """When activating a template for a specific criticality, deactivate all others with the same criticality.
-    No-op for templates without a criticality assignment (criticality=None).
-    """
+def _enforce_single_active(
+    db: Session, template_id: int, criticality: str | None, template_type: str
+) -> None:
+    """When activating a template, deactivate all other active templates with the same
+    (criticality, type) pair. No-op for templates without a criticality assignment."""
     if not criticality:
         return
     db.query(AssessmentTemplate).filter(
+        AssessmentTemplate.type == template_type,
         AssessmentTemplate.criticality == criticality,
         AssessmentTemplate.id != template_id,
         AssessmentTemplate.is_active == True,
@@ -47,6 +50,7 @@ def _build_detail(tmpl: AssessmentTemplate, questions: list[AssessmentTemplateQu
 
 @router.get("", response_model=PaginatedResponse[AssessmentTemplateRead])
 def list_templates(
+    type: str | None = Query(None),
     criticality: str | None = Query(None),
     is_base_template: bool | None = Query(None),
     is_active: bool | None = Query(None),
@@ -56,6 +60,8 @@ def list_templates(
     db: Session = Depends(get_db),
 ):
     q = db.query(AssessmentTemplate)
+    if type:
+        q = q.filter(AssessmentTemplate.type == type)
     if criticality:
         q = q.filter(AssessmentTemplate.criticality == criticality)
     if is_base_template is not None:
@@ -101,6 +107,8 @@ def get_template(template_id: int, db: Session = Depends(get_db)):
 def create_template(payload: AssessmentTemplateCreate, db: Session = Depends(get_db)):
     if payload.criticality and payload.criticality not in VALID_CRITICALITIES:
         raise HTTPException(status_code=422, detail=f"Invalid criticality: {payload.criticality}")
+    if payload.type not in VALID_ASSESSMENT_TYPES:
+        raise HTTPException(status_code=422, detail=f"Invalid type: {payload.type}")
     for q in payload.questions:
         if q.type not in VALID_QUESTION_TYPES:
             raise HTTPException(status_code=422, detail=f"Invalid question type: {q.type}")
@@ -109,6 +117,7 @@ def create_template(payload: AssessmentTemplateCreate, db: Session = Depends(get
         name=payload.name,
         description=payload.description,
         criticality=payload.criticality,
+        type=payload.type,
         is_base_template=False,
         version=1,
         is_active=True,
@@ -116,8 +125,8 @@ def create_template(payload: AssessmentTemplateCreate, db: Session = Depends(get
     db.add(tmpl)
     db.flush()
 
-    # New templates are always created active — deactivate siblings for the same criticality
-    _enforce_single_active(db, tmpl.id, payload.criticality)
+    # New templates are always created active — deactivate siblings for same (criticality, type)
+    _enforce_single_active(db, tmpl.id, payload.criticality, payload.type)
 
     for i, q in enumerate(payload.questions):
         db.add(AssessmentTemplateQuestion(
@@ -153,10 +162,10 @@ def update_template(template_id: int, payload: AssessmentTemplateUpdate, db: Ses
     for field, value in updates.items():
         setattr(tmpl, field, value)
 
-    # If activating this template, deactivate all other templates with the same criticality
+    # If activating this template, deactivate all other templates with same (criticality, type)
     if updates.get("is_active") is True:
         effective_criticality = updates.get("criticality") or tmpl.criticality
-        _enforce_single_active(db, tmpl.id, effective_criticality)
+        _enforce_single_active(db, tmpl.id, effective_criticality, tmpl.type)
 
     db.commit()
     db.refresh(tmpl)
@@ -190,6 +199,7 @@ def duplicate_template(template_id: int, db: Session = Depends(get_db)):
         name=f"{source.name} (Copy)",
         description=source.description,
         criticality=source.criticality,
+        type=source.type,
         is_base_template=False,
         version=1,
         is_active=True,
@@ -197,8 +207,8 @@ def duplicate_template(template_id: int, db: Session = Depends(get_db)):
     db.add(copy)
     db.flush()
 
-    # Duplicate starts active — deactivate siblings for the same criticality
-    _enforce_single_active(db, copy.id, source.criticality)
+    # Duplicate starts active — deactivate siblings for same (criticality, type)
+    _enforce_single_active(db, copy.id, source.criticality, source.type)
 
     source_questions = (
         db.query(AssessmentTemplateQuestion)

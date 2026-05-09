@@ -42,23 +42,18 @@ def _template_qs_to_assessment_format(questions: list[AssessmentTemplateQuestion
 
 
 def _resolve_questions(db: Session, assessment_type: str, vendor_criticality: str) -> list[dict]:
-    """Resolve the questions for a new assessment.
+    """Resolve the questions for a new assessment via DB templates.
 
-    For self_assessment, queries the DB for the active template:
-      1. Active custom template for the criticality (is_base_template=False)
-      2. Base template for the criticality (active flag is ignored — always the fallback)
-      3. Hardcoded service (safety net if no templates seeded)
-
-    All other types (trust_center, access_to_information, ai_check) continue to use
-    the hardcoded service unchanged.
+    Resolution order (applies to all assessment types):
+      1. Active custom template for (type, criticality) — is_base_template=False, is_active=True
+      2. Base template for (type, criticality) — is_base_template=True, is_active ignored
+      3. Hardcoded service — safety net if templates not yet migrated
     """
-    if assessment_type != "self_assessment":
-        return get_template_questions(assessment_type, vendor_criticality)
-
-    # 1. Active custom template
+    # 1. Active custom template for this assessment type + criticality
     custom = (
         db.query(AssessmentTemplate)
         .filter(
+            AssessmentTemplate.type == assessment_type,
             AssessmentTemplate.criticality == vendor_criticality,
             AssessmentTemplate.is_active == True,
             AssessmentTemplate.is_base_template == False,
@@ -74,10 +69,11 @@ def _resolve_questions(db: Session, assessment_type: str, vendor_criticality: st
         )
         return _template_qs_to_assessment_format(qs)
 
-    # 2. Base template (always the fallback regardless of is_active)
+    # 2. Base template for this assessment type + criticality (fallback regardless of is_active)
     base = (
         db.query(AssessmentTemplate)
         .filter(
+            AssessmentTemplate.type == assessment_type,
             AssessmentTemplate.criticality == vendor_criticality,
             AssessmentTemplate.is_base_template == True,
         )
@@ -92,7 +88,7 @@ def _resolve_questions(db: Session, assessment_type: str, vendor_criticality: st
         )
         return _template_qs_to_assessment_format(qs)
 
-    # 3. Hardcoded fallback (safety net)
+    # 3. Hardcoded fallback (safety net if templates not yet seeded)
     return get_template_questions(assessment_type, vendor_criticality)
 
 

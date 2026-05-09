@@ -16,15 +16,16 @@ import {
   updateAssessmentTemplate,
 } from "@/lib/api";
 import type { TemplateQuestionPayload } from "@/lib/api";
-import type { AssessmentTemplateDetail, VendorCriticality } from "@/lib/types";
-import { QUESTION_TYPE_ICONS, QUESTION_TYPE_LABELS } from "@/lib/types";
+import type { AssessmentTemplateDetail, AssessmentType, VendorCriticality } from "@/lib/types";
+import { ASSESSMENT_TYPE_LABELS, QUESTION_TYPE_ICONS, QUESTION_TYPE_LABELS } from "@/lib/types";
 
 const CRITICALITIES: VendorCriticality[] = ["Low", "Medium", "High", "Critical"];
 
-// ── base template read-only view ─────────────────────────────────────────────
+// ── base template read-only view ──────────────────────────────────────────────
 
 function BaseTemplateView({ template, onDuplicate }: { template: AssessmentTemplateDetail; onDuplicate: () => void }) {
   const router = useRouter();
+  const backHref = `/assessments/templates?type=${template.type}`;
 
   return (
     <div>
@@ -32,7 +33,7 @@ function BaseTemplateView({ template, onDuplicate }: { template: AssessmentTempl
         title={template.name}
         actions={
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={() => router.push("/assessments/templates")}>
+            <Button variant="secondary" size="sm" onClick={() => router.push(backHref)}>
               Back
             </Button>
             <Button size="sm" onClick={onDuplicate}>
@@ -67,6 +68,10 @@ function BaseTemplateView({ template, onDuplicate }: { template: AssessmentTempl
               <p style={{ color: "#f1f5f9" }}>{template.name}</p>
             </div>
             <div>
+              <p className="text-xs mb-0.5" style={{ color: "#64748b" }}>Assessment Type</p>
+              <p style={{ color: "#f1f5f9" }}>{ASSESSMENT_TYPE_LABELS[template.type as AssessmentType]}</p>
+            </div>
+            <div>
               <p className="text-xs mb-0.5" style={{ color: "#64748b" }}>Criticality</p>
               {template.criticality ? (
                 <CriticalityBadge value={template.criticality} />
@@ -87,38 +92,42 @@ function BaseTemplateView({ template, onDuplicate }: { template: AssessmentTempl
           <p className="text-xs font-medium mb-3" style={{ color: "#64748b" }}>
             Questions ({template.questions.length})
           </p>
-          <div className="flex flex-col gap-2">
-            {template.questions.map((q, i) => (
-              <div
-                key={q.id}
-                style={{
-                  background: "#0f1117",
-                  border: "0.5px solid #1e2433",
-                  borderRadius: 8,
-                  padding: "10px 14px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                <span className="text-xs font-mono" style={{ color: "#64748b", minWidth: 20 }}>
-                  {i + 1}.
-                </span>
-                <span style={{ color: "#64748b", fontSize: 16, minWidth: 18 }}>
-                  {QUESTION_TYPE_ICONS[q.type]}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm" style={{ color: "#f1f5f9" }}>{q.title}</p>
-                  <p className="text-xs" style={{ color: "#64748b" }}>
-                    {QUESTION_TYPE_LABELS[q.type]}
-                    {q.required && (
-                      <span style={{ color: "#f87171", marginLeft: 6 }}>required</span>
-                    )}
-                  </p>
+          {template.questions.length === 0 ? (
+            <p className="text-sm" style={{ color: "#64748b" }}>No questions defined for this template.</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {template.questions.map((q, i) => (
+                <div
+                  key={q.id}
+                  style={{
+                    background: "#0f1117",
+                    border: "0.5px solid #1e2433",
+                    borderRadius: 8,
+                    padding: "10px 14px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                  }}
+                >
+                  <span className="text-xs font-mono" style={{ color: "#64748b", minWidth: 20 }}>
+                    {i + 1}.
+                  </span>
+                  <span style={{ color: "#64748b", fontSize: 16, minWidth: 18 }}>
+                    {QUESTION_TYPE_ICONS[q.type]}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm" style={{ color: "#f1f5f9" }}>{q.title}</p>
+                    <p className="text-xs" style={{ color: "#64748b" }}>
+                      {QUESTION_TYPE_LABELS[q.type]}
+                      {q.required && (
+                        <span style={{ color: "#f87171", marginLeft: 6 }}>required</span>
+                      )}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </Card>
       </div>
     </div>
@@ -129,6 +138,7 @@ function BaseTemplateView({ template, onDuplicate }: { template: AssessmentTempl
 
 function CustomTemplateEdit({ template }: { template: AssessmentTemplateDetail }) {
   const router = useRouter();
+  const backHref = `/assessments/templates?type=${template.type}`;
 
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description ?? "");
@@ -158,7 +168,7 @@ function CustomTemplateEdit({ template }: { template: AssessmentTemplateDetail }
         criticality: criticality || null,
       });
       await replaceTemplateQuestions(template.id, questions);
-      router.push("/assessments/templates");
+      router.push(backHref);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
@@ -190,6 +200,13 @@ function CustomTemplateEdit({ template }: { template: AssessmentTemplateDetail }
                 style={{ minHeight: 72 }}
               />
             </div>
+            <div>
+              <p className="text-xs mb-1.5 font-medium" style={{ color: "#64748b" }}>Assessment Type</p>
+              <p className="text-sm" style={{ color: "#f1f5f9" }}>
+                {ASSESSMENT_TYPE_LABELS[template.type as AssessmentType]}
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: "#64748b" }}>Cannot be changed after creation</p>
+            </div>
             <Select
               label="Criticality (optional)"
               value={criticality}
@@ -213,7 +230,7 @@ function CustomTemplateEdit({ template }: { template: AssessmentTemplateDetail }
         {error && <p className="text-sm" style={{ color: "#f87171" }}>{error}</p>}
 
         <div className="flex gap-2 justify-end">
-          <Button type="button" variant="secondary" onClick={() => router.push("/assessments/templates")}>
+          <Button type="button" variant="secondary" onClick={() => router.push(backHref)}>
             Cancel
           </Button>
           <Button type="submit" disabled={saving || !name.trim()}>

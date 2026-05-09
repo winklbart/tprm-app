@@ -235,6 +235,7 @@ export interface AssessmentTemplate {
   name: string;
   description: string | null;
   criticality: VendorCriticality | null;
+  type: AssessmentType;
   is_base_template: boolean;
   version: number;
   is_active: boolean;

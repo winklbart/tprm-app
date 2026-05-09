@@ -266,6 +266,7 @@ export function getAuditLogs(filters: AuditLogFilters = {}): Promise<PaginatedRe
 // --- Assessment Templates ---
 
 export interface AssessmentTemplateFilters {
+  type?: AssessmentType;
   criticality?: VendorCriticality;
   is_base_template?: boolean;
   is_active?: boolean;
@@ -276,6 +277,7 @@ export interface AssessmentTemplateFilters {
 
 export function getAssessmentTemplates(filters: AssessmentTemplateFilters = {}): Promise<PaginatedResponse<AssessmentTemplate>> {
   const params = new URLSearchParams();
+  if (filters.type) params.set("type", filters.type);
   if (filters.criticality) params.set("criticality", filters.criticality);
   if (filters.is_base_template != null) params.set("is_base_template", String(filters.is_base_template));
   if (filters.is_active != null) params.set("is_active", String(filters.is_active));
@@ -303,6 +305,7 @@ export interface AssessmentTemplateCreatePayload {
   name: string;
   description?: string | null;
   criticality?: VendorCriticality | null;
+  type: AssessmentType;
   questions: TemplateQuestionPayload[];
 }
 

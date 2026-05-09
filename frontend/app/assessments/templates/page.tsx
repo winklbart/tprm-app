@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
 
 import { CriticalityBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -15,12 +16,21 @@ import {
   getAssessmentTemplates,
   updateAssessmentTemplate,
 } from "@/lib/api";
-import type { AssessmentTemplate, VendorCriticality } from "@/lib/types";
+import type { AssessmentTemplateFilters } from "@/lib/api";
+import type { AssessmentTemplate, AssessmentType, VendorCriticality } from "@/lib/types";
+import { ASSESSMENT_TYPE_LABELS } from "@/lib/types";
 
 const LIMIT = 25;
 const CRITICALITIES: VendorCriticality[] = ["Low", "Medium", "High", "Critical"];
 
-// ── inline toggle ────────────────────────────────────────────────────────────
+const TABS: { key: AssessmentType; label: string }[] = [
+  { key: "self_assessment", label: "Self Assessment" },
+  { key: "trust_center", label: "Trust Center" },
+  { key: "access_to_information", label: "Access to Information" },
+  { key: "ai_check", label: "AI Check" },
+];
+
+// ── inline toggle ─────────────────────────────────────────────────────────────
 
 function ActiveToggle({ active, onChange }: { active: boolean; onChange: () => void }) {
   return (
@@ -57,9 +67,13 @@ function ActiveToggle({ active, onChange }: { active: boolean; onChange: () => v
   );
 }
 
-// ── page ─────────────────────────────────────────────────────────────────────
+// ── main content (needs useSearchParams — wrapped in Suspense) ─────────────────
 
-export default function TemplatesPage() {
+function TemplatesContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const activeType = (searchParams.get("type") as AssessmentType | null) ?? "self_assessment";
+
   const [data, setData] = useState<{ items: AssessmentTemplate[]; total: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -69,11 +83,16 @@ export default function TemplatesPage() {
   const [typeFilter, setTypeFilter] = useState<"" | "base" | "custom">("");
   const [offset, setOffset] = useState(0);
 
+  const switchTab = (t: AssessmentType) => {
+    setOffset(0);
+    router.push(`/assessments/templates?type=${t}`, { scroll: false });
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const filters: Record<string, unknown> = { limit: LIMIT, offset };
+      const filters: AssessmentTemplateFilters = { limit: LIMIT, offset, type: activeType };
       if (search) filters.search = search;
       if (criticality) filters.criticality = criticality;
       if (typeFilter === "base") filters.is_base_template = true;
@@ -85,13 +104,13 @@ export default function TemplatesPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, criticality, typeFilter, offset]);
+  }, [activeType, search, criticality, typeFilter, offset]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Optimistic toggle. Toggling OFF: update single item, no reload needed.
-  // Toggling ON: after API success, reload the full list so deactivated siblings
-  // (same criticality, now is_active=false) are reflected immediately.
+  // Reset offset when switching tabs
+  useEffect(() => { setOffset(0); }, [activeType]);
+
   const handleToggleActive = async (t: AssessmentTemplate) => {
     const next = !t.is_active;
     setData((prev) => prev ? {
@@ -101,7 +120,7 @@ export default function TemplatesPage() {
     try {
       await updateAssessmentTemplate(t.id, { is_active: next });
       if (next) {
-        // Activation may have deactivated other templates with the same criticality
+        // Activation may have deactivated siblings with the same (criticality, type)
         load();
       }
     } catch {
@@ -135,12 +154,45 @@ export default function TemplatesPage() {
       <Topbar
         title={`Assessment Templates${total ? ` (${total})` : ""}`}
         actions={
-          <Link href="/assessments/templates/new">
+          <Link href={`/assessments/templates/new?type=${activeType}`}>
             <Button size="sm">+ New Template</Button>
           </Link>
         }
       />
 
+      {/* Type tabs */}
+      <div
+        className="flex mb-4"
+        style={{ borderBottom: "0.5px solid #1e2433" }}
+      >
+        {TABS.map((tab) => {
+          const active = tab.key === activeType;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => switchTab(tab.key)}
+              style={{
+                padding: "8px 16px",
+                fontSize: 13,
+                fontWeight: 500,
+                color: active ? "#818cf8" : "#64748b",
+                background: "transparent",
+                border: "none",
+                borderBottom: `2px solid ${active ? "#818cf8" : "transparent"}`,
+                cursor: "pointer",
+                marginBottom: -1,
+                transition: "color 0.15s, border-color 0.15s",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4">
         <Input
           placeholder="Search by name…"
@@ -173,7 +225,9 @@ export default function TemplatesPage() {
         {loading ? (
           <p className="text-sm text-center py-8" style={{ color: "#64748b" }}>Loading…</p>
         ) : items.length === 0 ? (
-          <p className="text-sm text-center py-8" style={{ color: "#64748b" }}>No templates found.</p>
+          <p className="text-sm text-center py-8" style={{ color: "#64748b" }}>
+            No {ASSESSMENT_TYPE_LABELS[activeType]} templates found.
+          </p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -276,5 +330,15 @@ export default function TemplatesPage() {
         />
       )}
     </div>
+  );
+}
+
+// ── page ──────────────────────────────────────────────────────────────────────
+
+export default function TemplatesPage() {
+  return (
+    <Suspense fallback={<div style={{ color: "#64748b", padding: 24, fontSize: 14 }}>Loading…</div>}>
+      <TemplatesContent />
+    </Suspense>
   );
 }

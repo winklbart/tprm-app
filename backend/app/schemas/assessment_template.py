@@ -28,6 +28,7 @@ class AssessmentTemplateBase(BaseModel):
     name: str
     description: str | None = None
     criticality: str | None = None
+    type: str = "self_assessment"
 
 
 class AssessmentTemplateCreate(AssessmentTemplateBase):
@@ -39,6 +40,7 @@ class AssessmentTemplateUpdate(BaseModel):
     description: str | None = None
     criticality: str | None = None
     is_active: bool | None = None
+    # type is intentionally excluded — immutable after creation
 
 
 class AssessmentTemplateRead(AssessmentTemplateBase):
