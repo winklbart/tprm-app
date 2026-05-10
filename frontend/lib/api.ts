@@ -29,7 +29,14 @@ export async function fetchApi<T>(path: string, options?: RequestInit): Promise<
     ...options,
   });
   if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${await res.text()}`);
+    let message: string;
+    try {
+      const body = await res.json();
+      message = typeof body?.detail === "string" ? body.detail : JSON.stringify(body);
+    } catch {
+      message = (await res.text()) || `Request failed with status ${res.status}`;
+    }
+    throw new Error(message);
   }
   if (res.status === 204) {
     return undefined as unknown as T;

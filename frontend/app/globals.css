@@ -22,3 +22,62 @@ body {
 * {
   box-sizing: border-box;
 }
+
+/* ── Dashboard interactive elements ──────────────────────────────────────── */
+.db-card-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}
+.db-card-wrap {
+  background: #131720;
+  border: 0.5px solid #1e2433;
+  border-radius: 10px;
+  padding: 16px;
+  transition: background 0.15s;
+  cursor: pointer;
+}
+.db-card-link:hover .db-card-wrap {
+  background: #1a2030;
+}
+.db-row {
+  transition: background 0.12s;
+  cursor: pointer;
+}
+.db-row:hover {
+  background: #1a2030;
+}
+.db-list-link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  border-radius: 6px;
+  transition: background 0.12s;
+  padding: 4px 6px;
+  margin: -4px -6px;
+}
+.db-list-link:hover {
+  background: #1a2030;
+}
+.db-segment {
+  cursor: pointer;
+  transition: opacity 0.12s;
+}
+.db-segment:hover {
+  opacity: 0.75;
+}
+.db-legend-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  text-decoration: none;
+  color: inherit;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  border-radius: 4px;
+  transition: background 0.12s;
+}
+.db-legend-link:hover {
+  background: #1a2030;
+}

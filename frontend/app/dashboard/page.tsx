@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { Card } from "@/components/ui/Card";
@@ -21,7 +22,16 @@ const RISK_STATUS_COLORS: Record<string, string> = {
   Closed: "#22c55e",
 };
 
-function DonutChart({ data, colors }: { data: [string, number][]; colors: Record<string, string> }) {
+function DonutChart({
+  data,
+  colors,
+  getSegmentHref,
+}: {
+  data: [string, number][];
+  colors: Record<string, string>;
+  getSegmentHref?: (label: string) => string;
+}) {
+  const router = useRouter();
   const total = data.reduce((s, [, v]) => s + v, 0);
   if (total === 0) {
     return (
@@ -54,6 +64,8 @@ function DonutChart({ data, colors }: { data: [string, number][]; colors: Record
             strokeDasharray={`${seg.dashArray} ${circ}`}
             strokeDashoffset={seg.dashOffset}
             transform={`rotate(-90 ${cx} ${cy})`}
+            className={getSegmentHref ? "db-segment" : undefined}
+            onClick={getSegmentHref ? () => router.push(getSegmentHref(seg.label)) : undefined}
           />
         ))}
         <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" style={{ fill: "#f1f5f9", fontSize: 18, fontWeight: 600 }}>
@@ -61,13 +73,26 @@ function DonutChart({ data, colors }: { data: [string, number][]; colors: Record
         </text>
       </svg>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {segments.map((seg) => (
-          <div key={seg.label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-            <div style={{ width: 10, height: 10, borderRadius: 2, background: seg.color, flexShrink: 0 }} />
-            <span style={{ color: "#94a3b8" }}>{seg.label}</span>
-            <span style={{ color: "#f1f5f9", fontWeight: 600, marginLeft: 8 }}>{seg.value}</span>
-          </div>
-        ))}
+        {segments.map((seg) => {
+          const href = getSegmentHref?.(seg.label);
+          const swatch = <div style={{ width: 10, height: 10, borderRadius: 2, background: seg.color, flexShrink: 0 }} />;
+          if (href) {
+            return (
+              <Link key={seg.label} href={href} className="db-legend-link">
+                {swatch}
+                <span style={{ color: "#94a3b8" }}>{seg.label}</span>
+                <span style={{ color: "#f1f5f9", fontWeight: 600, marginLeft: 8 }}>{seg.value}</span>
+              </Link>
+            );
+          }
+          return (
+            <div key={seg.label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+              {swatch}
+              <span style={{ color: "#94a3b8" }}>{seg.label}</span>
+              <span style={{ color: "#f1f5f9", fontWeight: 600, marginLeft: 8 }}>{seg.value}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -92,9 +117,15 @@ function BarChart({ data, color }: { data: [string, number][]; color: string }) 
   );
 }
 
-function MetricCard({ label, value, sub, highlight }: { label: string; value: number; sub?: string; highlight?: boolean }) {
-  return (
-    <Card style={{ padding: "16px 20px" }}>
+function MetricCard({ label, value, sub, highlight, href }: {
+  label: string;
+  value: number;
+  sub?: string;
+  highlight?: boolean;
+  href?: string;
+}) {
+  const content = (
+    <>
       <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
         {label}
       </div>
@@ -102,11 +133,22 @@ function MetricCard({ label, value, sub, highlight }: { label: string; value: nu
         {value.toLocaleString()}
       </div>
       {sub && <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{sub}</div>}
-    </Card>
+    </>
   );
+  if (href) {
+    return (
+      <Link href={href} className="db-card-link">
+        <div className="db-card-wrap" style={{ padding: "16px 20px" }}>
+          {content}
+        </div>
+      </Link>
+    );
+  }
+  return <Card style={{ padding: "16px 20px" }}>{content}</Card>;
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -141,32 +183,46 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-4">
       <Topbar title="Dashboard" />
 
+      {/* Metric cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-        <MetricCard label="Vendors" value={data.vendor_count} />
-        <MetricCard label="Assets" value={data.asset_count} />
+        <MetricCard label="Vendors" value={data.vendor_count} href="/vendors" />
+        <MetricCard label="Assets" value={data.asset_count} href="/assets" />
         <MetricCard
           label="Total Risks"
           value={data.risk_count}
           sub={`${data.open_risk_count} open`}
           highlight={data.open_risk_count > 0}
+          href="/risks"
         />
-        <MetricCard label="Assessments" value={data.assessment_count} />
+        <MetricCard
+          label="Assessments"
+          value={data.assessment_count}
+          href="/assessments?status=In+Progress"
+        />
         <MetricCard
           label="Overdue Assessments"
           value={data.overdue_count}
           highlight={data.overdue_count > 0}
+          href="/assessments"
         />
       </div>
 
+      {/* Charts row — Vendor Distribution (segment links) + Risk Trend (whole-card link) */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <Card>
           <h3 style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 12 }}>Vendors by Criticality</h3>
-          <DonutChart data={criticalityData} colors={CRITICALITY_COLORS} />
+          <DonutChart
+            data={criticalityData}
+            colors={CRITICALITY_COLORS}
+            getSegmentHref={(label) => `/vendors?criticality=${encodeURIComponent(label)}`}
+          />
         </Card>
-        <Card>
-          <h3 style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 12 }}>Risks by Status</h3>
-          <DonutChart data={riskStatusData} colors={RISK_STATUS_COLORS} />
-        </Card>
+        <Link href="/risks" className="db-card-link">
+          <div className="db-card-wrap" style={{ padding: 16 }}>
+            <h3 style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 12 }}>Risks by Status</h3>
+            <DonutChart data={riskStatusData} colors={RISK_STATUS_COLORS} />
+          </div>
+        </Link>
       </div>
 
       {riskCategoryData.length > 0 && (
@@ -176,6 +232,7 @@ export default function DashboardPage() {
         </Card>
       )}
 
+      {/* Top Risk Vendors — whole row clickable */}
       {data.top_risk_vendors.length > 0 && (
         <Card>
           <h3 style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 12 }}>Top Risk Vendors</h3>
@@ -189,10 +246,13 @@ export default function DashboardPage() {
             </thead>
             <tbody>
               {data.top_risk_vendors.map((v) => (
-                <tr key={v.id} style={{ borderBottom: "0.5px solid #1e2433" }}>
-                  <td className="py-2 px-3">
-                    <Link href={`/vendors/${v.id}`} style={{ color: "#818cf8" }}>{v.name}</Link>
-                  </td>
+                <tr
+                  key={v.id}
+                  className="db-row"
+                  onClick={() => router.push(`/vendors/${v.id}`)}
+                  style={{ borderBottom: "0.5px solid #1e2433" }}
+                >
+                  <td className="py-2 px-3" style={{ color: "#818cf8" }}>{v.name}</td>
                   <td className="py-2 px-3" style={{ color: "#64748b" }}>{v.criticality}</td>
                   <td className="py-2 px-3" style={{ color: "#64748b" }}>{v.risk_count}</td>
                   <td className="py-2 px-3">
@@ -210,6 +270,7 @@ export default function DashboardPage() {
         </Card>
       )}
 
+      {/* Recent Risks + Overdue Assessments — each item is a link */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <Card>
           <h3 style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 12 }}>Recent Risks</h3>
@@ -218,7 +279,12 @@ export default function DashboardPage() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {data.recent_risks.map((r) => (
-                <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <Link
+                  key={r.id}
+                  href={`/risks/${r.id}/edit`}
+                  className="db-list-link"
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                >
                   <div>
                     <div style={{ fontSize: 13, color: "#f1f5f9" }}>{r.title}</div>
                     <div style={{ fontSize: 11, color: "#64748b" }}>{r.vendor_name} · {r.category}</div>
@@ -230,7 +296,7 @@ export default function DashboardPage() {
                   }}>
                     {r.risk_score}
                   </span>
-                </div>
+                </Link>
               ))}
             </div>
           )}
@@ -243,7 +309,12 @@ export default function DashboardPage() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {data.overdue_assessments.map((a) => (
-                <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <Link
+                  key={a.id}
+                  href={`/assessments/${a.id}`}
+                  className="db-list-link"
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}
+                >
                   <div>
                     <div style={{ fontSize: 13, color: "#f1f5f9" }}>{a.vendor_name || "Unknown"}</div>
                     <div style={{ fontSize: 11, color: "#64748b" }}>
@@ -251,7 +322,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <span style={{ fontSize: 12, fontWeight: 600, color: "#f87171" }}>+{a.days_overdue}d</span>
-                </div>
+                </Link>
               ))}
             </div>
           )}

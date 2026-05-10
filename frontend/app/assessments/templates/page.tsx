@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { CriticalityBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -77,6 +77,8 @@ function TemplatesContent() {
   const [data, setData] = useState<{ items: AssessmentTemplate[]; total: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<number | null>(null);
+  const deletedIds = useRef<Set<number>>(new Set());
 
   const [search, setSearch] = useState("");
   const [criticality, setCriticality] = useState<VendorCriticality | "">("");
@@ -98,7 +100,8 @@ function TemplatesContent() {
       if (typeFilter === "base") filters.is_base_template = true;
       if (typeFilter === "custom") filters.is_base_template = false;
       const res = await getAssessmentTemplates(filters);
-      setData({ items: res.items, total: res.total });
+      const items = res.items.filter((item) => !deletedIds.current.has(item.id));
+      setData({ items, total: res.total - (res.items.length - items.length) });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
@@ -113,36 +116,56 @@ function TemplatesContent() {
 
   const handleToggleActive = async (t: AssessmentTemplate) => {
     const next = !t.is_active;
-    setData((prev) => prev ? {
-      ...prev,
-      items: prev.items.map((item) => item.id === t.id ? { ...item, is_active: next } : item),
-    } : prev);
+    setData((prev) => {
+      if (!prev) return prev;
+      const items = prev.items.map((item) => {
+        if (item.id === t.id) return { ...item, is_active: next };
+        // Mirror the backend's single-active enforcement: when activating, deactivate
+        // other templates that share the same non-null criticality + type pair.
+        if (next && t.criticality && item.criticality === t.criticality && item.type === t.type) {
+          return { ...item, is_active: false };
+        }
+        return item;
+      });
+      return { ...prev, items };
+    });
     try {
       await updateAssessmentTemplate(t.id, { is_active: next });
-      if (next) {
-        // Activation may have deactivated siblings with the same (criticality, type)
-        load();
-      }
-    } catch {
+    } catch (e: unknown) {
+      // Revert optimistic update
       setData((prev) => prev ? {
         ...prev,
         items: prev.items.map((item) => item.id === t.id ? { ...item, is_active: t.is_active } : item),
       } : prev);
+      setError(e instanceof Error ? e.message : "Failed to update template");
     }
   };
 
   const handleDuplicate = async (id: number) => {
-    await duplicateAssessmentTemplate(id);
-    load();
+    try {
+      await duplicateAssessmentTemplate(id);
+      load();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to duplicate template");
+    }
   };
 
   const handleDelete = async (t: AssessmentTemplate) => {
-    if (!confirm(`Deactivate template "${t.name}"? It will no longer appear by default.`)) return;
+    if (!confirm(`Delete template "${t.name}"? This cannot be undone.`)) return;
+    setDeleting(t.id);
+    setError(null);
     try {
       await deleteAssessmentTemplate(t.id);
-      load();
+      deletedIds.current.add(t.id);
+      setData((prev) =>
+        prev
+          ? { items: prev.items.filter((item) => item.id !== t.id), total: prev.total - 1 }
+          : prev,
+      );
     } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "Failed to delete");
+      setError(e instanceof Error ? e.message : "Failed to delete template");
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -308,8 +331,9 @@ function TemplatesContent() {
                           variant="danger"
                           size="sm"
                           onClick={() => handleDelete(t)}
+                          disabled={deleting === t.id}
                         >
-                          Delete
+                          {deleting === t.id ? "Deleting…" : "Delete"}
                         </Button>
                       )}
                     </div>
